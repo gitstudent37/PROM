@@ -127,5 +127,3 @@ colnames(results_df0) <- c("cronbach_alpha")
 write_xlsx(results_df0, "Total_Cronbach.xlsx")
 
 # [file content end]
-
-

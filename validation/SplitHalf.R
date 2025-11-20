@@ -122,8 +122,3 @@ colnames(results_df0) <- c("Maximum split half reliability (lambda 4)")
 write_xlsx(results_df0, "Total_SplitHalf.xlsx")
 
 # [file content end]
-
-
-
-
-
