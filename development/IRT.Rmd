@@ -1,0 +1,94 @@
+[file name]: IRT.Rmd
+[file content begin]
+---
+Copyright (C) 2025 SXMU
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+---
+
+```{r}
+library(mirt)
+library(dplyr)
+library(tidyr)
+```
+
+
+# Set script directory as working directory
+```{r}
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+```
+
+
+# Import data
+```{r}
+data <- read.csv("data_demo.csv",row.names = 1)
+```
+
+
+# Fit unidimensional GRM model and extract parameters
+```{r}
+mod <- mirt(
+  data,
+  model = 1,
+  itemtype = "graded",
+)
+
+params <- coef(mod, IRTpars = TRUE, simplify = TRUE)$items
+```
+
+
+# Save parameter results as CSV file
+```{r}
+write.csv(params, "GRM_parameters.csv")
+```
+
+
+# Extract ICC probability data for all items
+```{r}
+# Set θ value range
+theta_vals <- seq(-6, 6, length.out = 100)  # Total 100 points
+
+# Create main data frame to store ICC for all items
+all_icc_data <- data.frame()
+
+# Loop through each item to extract its trace lines (ICC)
+for (i in 1:57) {
+  # Extract item model object for the i-th item
+  item_model <- extract.item(mod, i)
+  
+  # Calculate category probabilities for this item at all θ values
+  probs <- probtrace(item_model, Theta = matrix(theta_vals))
+  
+  # Convert to data frame
+  item_data <- as.data.frame(probs)
+  if (ncol(item_data)>5){
+    item_data <- item_data[,1:5] 
+  }
+  colnames(item_data) <- paste0("P", 1:ncol(item_data))
+  
+  # Add θ values and item number
+  item_data$Theta <- theta_vals
+  item_data$Item <- paste0("Item", i)
+  
+  # Reorganize column order
+  item_data <- item_data[, c("Item", "Theta", paste0("P", 1:5))]
+  all_icc_data <- rbind(all_icc_data, item_data)
+}
+```
+
+
+# Save ICC probability data as CSV file
+```{r}
+write.csv(all_icc_data, "icc_data.csv")
+```
+[file content end]

@@ -1,0 +1,276 @@
+[file name]: CTT.Rmd
+[file content begin]
+---
+Copyright (C) 2025 SXMU
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+---
+
+# Set script directory as working directory
+```{r}
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+```
+
+
+# Import data
+```{r}
+data <- read.csv("data_demo.csv",row.names = 1)
+```
+
+# ----------------------
+# Calculate standard deviation for each item (handling missing values) and convert to data frame structure
+# ----------------------
+```{r}
+sd_results <- apply(data, 2, sd, na.rm = TRUE)
+sd_df <- data.frame(
+  Item = names(sd_results),
+  Standard_Deviation = as.numeric(sd_results)
+)
+```
+
+
+# Print results and save as CSV file
+```{r}
+print(sd_df)
+write.csv(sd_df, "sd_df.csv")
+```
+
+
+# ----------------------
+# Exploratory Factor Analysis (EFA) to calculate factor loadings
+# ----------------------
+
+# 1. Check data suitability
+```{r}
+library(psych)  # Load required package
+
+# Calculate KMO statistic
+kmo_result <- KMO(data)
+cat("Overall KMO statistic:", kmo_result$MSA, "\n")
+cat("MSA values for each item:\n")
+print(kmo_result$MSAi)
+```
+
+
+```{r}
+# Bartlett’s sphericity test
+bartlett_result <- cortest.bartlett(data)
+cat("\Bartlett’s sphericity test results:\n")
+cat("Chi-square value:", bartlett_result$chisq, "\n")
+cat("Degrees of freedom:", bartlett_result$df, "\n")
+cat("p-value:", bartlett_result$p.value, "\n")
+```
+
+
+# 2. Exploratory Factor Analysis (EFA)
+```{r}
+library(psych)  # Load required package
+
+n_factor <- 11             # Specify number of factors as 11
+
+# Build EFA model (principal component extraction, varimax rotation)
+efa_model <- fa(
+  data,
+  nfactors = n_factor,
+  rotate = "varimax",     # Varimax orthogonal rotation
+  fm = "pa",              # Principal axis factoring
+  scores = "regression",  # Factor score calculation method
+  max.iter = 1000         # Increase iterations to ensure convergence
+)
+```
+
+
+# Extract factor loadings
+```{r}
+# Get factor loading matrix (keep 3 decimal places)
+loadings <- data.frame(
+  round(efa_model$loadings[, 1:n_factor], 5)  # Extract loadings for target factors
+)
+
+# Add item names
+loadings$Item <- rownames(loadings)
+rownames(loadings) <- NULL
+
+# Sort by factors and output results
+loadings_sorted <- loadings[, c("Item", sort(names(loadings)[1:n_factor]))]
+```
+
+
+# Print results and save as CSV file
+```{r}
+print(loadings_sorted)
+write.csv(loadings_sorted, "loadings_sorted.csv")
+```
+
+
+# ----------------------
+# Calculate item-dimension correlations, Cronbach's α for each dimension, item α change values, and CITC
+# ----------------------
+# 1. Define dimension-item mappings
+```{r}
+dimensions <- list(
+  SPE = paste0("item", 1:11),          # item1~item11
+  GEN = paste0("item", 12:16),         # item12~item16
+  IND = paste0("item", 17:20),         # item17~item20
+  ANX = c(paste0("item", 21:27), "item34"),  # item21~item27 + item34
+  DEP = c(paste0("item", 28:33), "item35"),  # item28~item33 + item35
+  COG = paste0("item", 36:38),         # item36~item38
+  IMP = paste0("item", 39:43),         # item39~item43
+  SUP = paste0("item", 44:48),         # item44~item48
+  TAD = c("item49", "item50"),         # item49 + item50
+  ADR = paste0("item", 51:52),         # item51 + item52
+  SAT = paste0("item", 53:57)          # item53~item57
+)
+
+# Check for duplicate column names
+all_items <- unlist(dimensions)
+if (any(duplicated(all_items))) {
+  stop("The following items are assigned to multiple dimensions:\n", paste(all_items[duplicated(all_items)], collapse = ", "))
+}
+
+# Check for invalid column names
+valid_columns <- colnames(data)
+invalid_columns <- setdiff(all_items, valid_columns)
+if (length(invalid_columns) > 0) {
+  stop("The following column names do not exist in the data:\n", paste(invalid_columns, collapse = ", "))
+}
+
+# Check if all 57 items are covered
+if (length(all_items) != 57) {
+  warning("Defined", length(all_items), "items, but data should have 57 items. Please check dimension assignments!")
+}
+```
+
+
+# 2. Calculate item-dimension correlations
+```{r}
+# Initialize result storage
+result_cor <- data.frame(
+  Item = character(),
+  Dimension = character(),
+  Correlation = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Loop through each dimension
+for (dim_name in names(dimensions)) {
+  items <- dimensions[[dim_name]]
+  
+  # Calculate dimension total score (ignore missing values)
+  df_total <- rowSums(data[, items, drop = FALSE], na.rm = TRUE)
+  
+  # Calculate correlation between each item and total score
+  for (item in items) {
+    cor_value <- cor(data[[item]], df_total, use = "pairwise.complete.obs")
+    result_cor <- rbind(result_cor, data.frame(
+      Item = item,
+      Dimension = dim_name,
+      Correlation = cor_value
+    ))
+  }
+}
+```
+
+
+# 3. Calculate Cronbach's α for each dimension, α change values, and CITC
+```{r}
+library(psych)
+
+# Initialize result storage
+result_alpha <- data.frame(
+  Dimension = character(),
+  Cronbachs_Alpha = numeric(),
+  stringsAsFactors = FALSE
+)
+
+result_citc <- data.frame(
+  Item = character(),
+  Dimension = character(),
+  CITC = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Initialize α change storage
+result_alpha_change <- data.frame(
+  Item = character(),
+  Dimension = character(),
+  Alpha_Change = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Loop through each dimension
+for (dim_name in names(dimensions)) {
+  items <- dimensions[[dim_name]]
+  
+  # Calculate original Cronbach's α
+  alpha_result <- psych::alpha(data[, items], check.keys = TRUE)
+  alpha_raw <- alpha_result$total$raw_alpha
+  
+  # Store original Cronbach's α results
+  result_alpha <- rbind(result_alpha, data.frame(
+    Dimension = dim_name,
+    Cronbachs_Alpha = alpha_raw
+  ))
+  
+  # Iterate through each item in current dimension
+  for (item in items) {
+    # Remaining items after deleting current item
+    items_remaining <- setdiff(items, item)
+    
+    # Calculate α change only when remaining items ≥ 2
+    if (length(items_remaining) >= 2) {
+      alpha_new <- psych::alpha(data[, items_remaining], check.keys = TRUE)$total$raw_alpha
+      delta_alpha <- alpha_new - alpha_raw
+    } else {
+      delta_alpha <- NA  # Insufficient items for calculation
+      warning(paste0("Dimension ", dim_name, " has fewer than 2 items after deleting ", item, ", skipping calculation"))
+    }
+    
+    # Store α change results
+    result_alpha_change <- rbind(result_alpha_change, data.frame(
+      Item = item,
+      Dimension = dim_name,
+      Alpha_Change = delta_alpha
+    ))
+  }
+  
+  # Extract and store CITC values
+  citc_values <- alpha_result$item.stats$r.drop
+  result_citc <- rbind(result_citc, data.frame(
+    Item = items,
+    Dimension = dim_name,
+    CITC = citc_values
+  ))
+}
+
+```
+
+# 4. Merge all results
+```{r}
+# Merge original results (assuming final_result already exists)
+final_result0 <- merge(result_cor, result_citc, by = c("Item", "Dimension"))
+final_result <- merge(final_result0, result_alpha_change, by = c("Item", "Dimension"))
+
+# Sort by item number (extract number and convert to numeric)
+final_result$Item_Number <- as.numeric(gsub("item", "", final_result$Item))
+final_result <- final_result[order(final_result$Item_Number), ]
+final_result$Item_Number <- NULL  # Delete temporary column
+```
+
+
+# Print results and save as CSV file
+```{r}
+print(final_result)
+write.csv(final_result, "final_result.csv")
+```
+[file content end]
